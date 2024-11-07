@@ -55,7 +55,7 @@
       (backward-1m backward-10s pause forward-10s forward-1m)
       (dec-sync    dec-volume   pause inc-volume  inc-sync  )
       (dec-speed   none         quit  none        inc-speed ) 
-      (grid        none         pause none        audio     )
+      (grid        none         pause pause-music audio     )
       (keyboard    subtitles    pause interlace   show-progress))))
   "Alist of events/grid states/grids.")
 
@@ -296,7 +296,9 @@
 (defun touchgrid--audio ()
   (movie-send-mpv-command '((command . ["cycle" "audio"]))))
 
-
+(defun touchgrid--pause-music ()
+  (call-process "eval-client" nil nil nil
+		"lights" "localhost" 8705 "(jukebox-pause)"))
 
 (defun touchgrid--play ()
   (touchgrid--emacs-focus)
