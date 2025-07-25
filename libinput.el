@@ -127,9 +127,9 @@
 		    " ")))))))
 
 (defun libinput-record (callback device-name)
-  (libinput--start callback #'libinput--record-parser "record"
-		   "--show-keycodes"
-		   (libinput--find-device device-name)))
+  (when-let ((device (libinput--find-device device-name)))
+    (libinput--start callback #'libinput--record-parser "record"
+		     "--show-keycodes" device)))
 
 (defun libinput--find-device (device-name)
   (with-temp-buffer
