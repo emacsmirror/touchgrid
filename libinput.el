@@ -1,4 +1,4 @@
-;;; libinput.el --- Executing actions based on input events
+;;; libinput.el --- Executing actions based on input events  -*- lexical-binding: t; -*-
 ;; Copyright (C) 2018 Lars Magne Ingebrigtsen
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
@@ -29,18 +29,23 @@
 (defvar libinput--prev-point nil)
 (defvar libinput--device-map nil)
 (defvar libinput--callback nil)
+(defvar libinput--parser nil)
 
 (defun libinput-start (callback)
   "Start listening for events."
+  (libinput--start callback #'libinput--parse-line "debug-events"))
+
+(defun libinput--start (callback parser &rest command)
   (libinput-stop)
   (with-current-buffer (get-buffer-create " *libinput*")
     (setq-local libinput--prev-point (point-max))
     (setq-local libinput--callback callback)
     (setq-local libinput--device-map (make-hash-table :test #'equal))
+    (setq-local libinput--parser parser)
     (setq libinput--process
-	  (start-process "libinput" (current-buffer)
-			 "libinput" "debug-events"))
-    (set-process-filter libinput--process 'libinput--filter)
+	  (apply #'start-process "libinput" (current-buffer)
+		 "libinput" command))
+    (set-process-filter libinput--process #'libinput--filter)
     (set-process-query-on-exit-flag libinput--process nil)))
 
 (defun libinput-stop ()
@@ -64,21 +69,23 @@
       (save-excursion
 	(forward-line -100)
 	(delete-region (point) (point-min)))
-      (setq libinput--prev-point (point)))
-    (dolist (line (nreverse lines))
-      (let ((event (libinput--parse-line line)))
-	;; At startup (or when new devices are added), create a map
-	;; from the physical to logical names.
-	(when (equal (cl-getf event :type) "DEVICE_ADDED")
-	  (setf (gethash (cl-getf event :device-id) map)
-		(cl-getf event :name)))
-	(setf (cl-getf event :device-name)
-	      (gethash (cl-getf event :device-id) map
-		       (cl-getf event :device-id)))
-	(condition-case err
-	    (funcall callback event)
-	  (error
-	   (message "Got an error: %s" err)))))))
+      (setq libinput--prev-point (point))
+      (dolist (line (nreverse lines))
+	(let ((event (funcall libinput--parser line)))
+	  ;; At startup (or when new devices are added), create a map
+	  ;; from the physical to logical names.
+	  (when event
+	    (when (equal (cl-getf event :type) "DEVICE_ADDED")
+	      (setf (gethash (cl-getf event :device-id) map)
+		    (cl-getf event :name)))
+	    (setf (cl-getf event :device-name)
+		  (gethash (cl-getf event :device-id) map
+			   (cl-getf event :device-id)))
+	    (condition-case err
+		(save-excursion
+		  (funcall callback event))
+	      (error
+	       (message "Got an error: %s" err)))))))))
 
 (defun libinput--parse-line (line)
   ;; The output is on the form below.  I don't know what the minus
@@ -118,6 +125,25 @@
 			     while (not (string-match "\\`seat" word))
 			     collect word)
 		    " ")))))))
+
+(defun libinput-record (callback device-name)
+  (libinput--start callback #'libinput--record-parser "record"
+		   "--show-keycodes"
+		   (libinput--find-device device-name)))
+
+(defun libinput--find-device (device-name)
+  (with-temp-buffer
+    (call-process "libinput" nil t nil "list-devices")
+    (goto-char (point-min))
+    (and (re-search-forward (format "^Device:[\t ]*%s[\t ]*$"
+				    (regexp-quote device-name))
+			    nil t)
+	 (re-search-forward "^Kernel:[\t ]*\\(.*\\)" nil t)
+	 (match-string 1))))
+
+(defun libinput--record-parser (line)
+  (and (string-match "EV_KEY / \\([^ ]+\\)[\t ]+0[\t ]*$" line)
+       (list :key (match-string 1 line))))
 
 (provide 'libinput)
 
