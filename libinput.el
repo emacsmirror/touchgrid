@@ -97,8 +97,10 @@
      (cond
       ((equal type "POINTER_MOTION")
        (let ((delta (split-string (nth 3 elem) "[ /]+")))
-	 (list :x-delta (string-to-number (car delta))
-	       :y-delta (string-to-number (cadr delta)))))
+	 (and (car delta)
+	      (cadr delta)
+	      (list :x-delta (string-to-number (car delta))
+		    :y-delta (string-to-number (cadr delta))))))
       ((equal type "TOUCH_DOWN")
        (let ((pos (split-string (nth 5 elem) "[ /]+")))
 	 (list :x (string-to-number (car pos))
